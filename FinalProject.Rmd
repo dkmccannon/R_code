@@ -1,0 +1,764 @@
+---
+title: "FinalProject"
+author: "David Kyle McCannon"
+date: '2022-08-15'
+output: html_document
+---
+
+```{r echo=FALSE, include=FALSE}
+library(iDINGO)
+library(igraph)
+library(dplyr)
+library(tableone)
+library(openxlsx)
+
+setwd("C:\\Users\\Kyle McCannon\\Desktop\\Northwestern\\2022_Spring\\BIOS_522_Network_Analysis\\Homework\\finalproject")
+
+data <- read.delim(file="FAsEicosanoidsST000915_AN001485_METABOLITES.txt", header=FALSE, sep=c("\t", "", ";", "|"), na.strings="NA", blank.lines.skip = TRUE, numerals = "allow.loss")
+
+sampledata <- 
+read.table(file="FAsEicosanoidsST000915_AN001485_SAMPLE_FACTORS.txt", header=T, sep=c(";"), na.strings="NA", blank.lines.skip=TRUE)
+
+```
+
+Introduction
+
+  Nonalcoholic fatty liver disease (NAFLD) is a rising global public health concern.  There are four stages of the disease: Steatosis, Nonalcoholic Steatohepatitis, Fibrosis, and Cirrhosis.  Steatosis is the non-symptomatic build up of fatty deposits around hepatocytes before inflammation develops.  Nonalcoholic steatohepatitis (NASH) the most advanced stage of the disease capable of regression is projected to increase 56% within the next ten years.  Since liver biopsy is the clinical standard for definitive diagnosis, developing additional less-invasive clinical diagnostic tools are in need. I expect to see more centralized prostaglandin precursor metabolites within the latent stages of NAFLD. The goal of this Gaussian graphical modeling differential network analysis is to determine fatty acids and eicosanoids network characteristics between the reversible stages of NAFLD.
+
+Methods
+
+  Fatty acid and Eicosanoid data was downloaded from metabolomicsworkbench.org (Study ID ST000915).
+Ninety one liver biopsies were sampled from individuals in a double blind case study exhibiting either Normal, Steatosis, NASH, or Cirrhosis. Liver samples were obtained from excess tissue collected as part of standard of care performed at the time of surgery.  Mean imputation was performed for all missing metabolites.  Sample demographics were collected and summarized in Table 1 whereas categorical variables are represented by frequency (percentage), normally distributed continuous variables by mean (SD), and non-normal distributed continuous variables by median (inner quartile range). Metabolomics networks were constructed by partial correlations representing edges between metabolites with a rho threshold of 0.2. The iDINGO package (version 1.0.4) in R (version 4.2.0) was utilized to calculate differential scores based on 100 bootstrap iterations to assess the differences between disease stage dependencies.  The igraph package (version 1.3.2) was utilized to characterized metabolomic network characteristics. Control vs. Steatosis, Control vs. NASH, and Steatosis vs. NASH global and local networks were constructed and analyzed by observing the metabolite node degree and centrality.  
+
+
+```{r Table1, echo=FALSE, out.width="100%"}
+setwd("C:\\Users\\Kyle McCannon\\Desktop\\Northwestern\\2022_Spring\\BIOS_522_Network_Analysis\\Homework\\finalproject")
+
+knitr::include_graphics("Table1highlight.png", error=FALSE)
+```
+
+Results
+  A total 88 samples were included in the differential network analysis. The majority of samples were female in NASH 11 (55 %) and Steatosis 12 (70.6%) category (see Table 1).  The average BMI was in the obese range for controls 39.70 (33.00 - 48.00), Steatosis 45.00 (40.00 - 50.00), and NASH 44.50 (41.12 - 51.25). The majority of sample ethnicities were White for each disease stage as shown in Table 1.  NASH and Steatosis were highlighted in Table 1 to denote the stages of interest for network analysis. The metabolite pairs with the greatest differential pair score in NASH vs. Steatosis included 9 pairs of metabolites, whereas Control vs. NASH and Control vs. Steatosis only included one metabolite pair with large differential score.  Within the global graphs from each comparison (see Figure 1A - C), each network appears to have a similar topology except for the NASH vs. Steatosis global network.  Hub score was utilized to represent vertex size within global networks and more fatty acids are observed as hub proteins and have a higher centrality within the network.  Modularity score was lower (0.67) between Steatosis vs. NASH network compared to Control differential networks: (0.73) Control vs. Steatosis and (0.76) Control vs. NASH. In the local graphs Figure 2A - C, nodes with unique edges compared to the global network were rendered orange and identified. Between the local networks of NASH vs. Steatosis Fatty Acid FA18:1, FA18:2, and FA18:3N6 are conserved near the center of the network.  
+
+
+
+
+```{r echo=FALSE, include=FALSE}
+#clean sample data
+#sd1 <- apply(x=sampledata, MARGIN = c(1,2), FUN = function(x) gsub(pattern ="\\=" , replacement="", ignore.case = TRUE, x))
+
+
+sampledata$GENDER <- gsub(pattern="GENDER=", replacement="", x=sampledata$GENDER)
+
+sampledata$FACTOR <- gsub(pattern="Diagnosis:", replacement="", x=sampledata$FACTOR)
+
+sampledata$BMI <- as.numeric(gsub(pattern="BMI=", replacement="", x=sampledata$BMI))
+
+sampledata$ETHNICITY <- gsub(pattern="ETHNICITY=", replacement="", x=sampledata$ETHNICITY)
+
+sampledata$AGE <- as.numeric(gsub(pattern="AGE=", replacement ="", x=sampledata$AGE))
+
+sampledata$AST <- as.numeric(gsub(pattern="AST=", replacement="", x=sampledata$AST))
+
+sampledata$ALT <- as.numeric(gsub(pattern="ALT=", replacement="", x=sampledata$ALT))
+
+sampledata$ALKP <- as.numeric(gsub(pattern="ALKP=", replacement="", x=sampledata$ALKP))
+
+sampledata$TBIL <- as.numeric(gsub(pattern="TBIL=", replacement="", x=sampledata$TBIL))
+
+sampledata$GLUCOSE <- as.numeric(gsub(pattern="GLUCOSE=", replacement="", x=sampledata$GLUCOSE))
+
+for (i in 1:ncol(sampledata)) {
+  sampledata [ , i] <- gsub(pattern="-", replacement="NA", x=sampledata[ , i])
+}
+
+
+fadsam <- sampledata[,-12]
+
+for (i in c(4,6,7,8,9,10,11)) {
+  fadsam [ , i] <- as.numeric(fadsam[ , i])
+}
+
+
+nnvars <- c("BMI", "AST", "ALT", "ALKP", "TBIL", "GLUCOSE")
+
+t1lab <- c("Gender", "BMI", "Ethnicity", "Age", "AST", "ALT", "ALKP", "TBIL", "Glucose")
+
+rend.cont <- function (x) {
+  with(stats.default(x),
+       sprintf("%0.2f (%0.1f)"), MEAN, SD)
+}
+
+tableone <- CreateTableOne(
+  vars = c("GENDER", "ETHNICITY", "BMI", "AGE", "AST", "ALT", "ALKP", "TBIL", "GLUCOSE"), 
+  data=fadsam, 
+  includeNA=TRUE, 
+  strata = "FACTOR",
+  test=FALSE
+  )
+
+
+tabcont <- print(tableone$ContTable,
+      catDigits = 1,
+      contDigits = 2,
+      nonnormal=nnvars,
+      noSpaces=TRUE,
+      printToggle=FALSE,
+      quote=FALSE,
+      showAllLevels = TRUE
+      )
+
+tabcat <- print(tableone$CatTable,
+      catDigits = 1,
+      contDigits = 2,
+      nonnormal=nnvars,
+      noSpaces=TRUE,
+      printToggle=FALSE,
+      quote=FALSE,
+      showAllLevels = TRUE
+      )
+
+
+#commented out to avoid overwriting
+
+#write.csv(tabcont, file="C:\\Users\\Kyle McCannon\\Desktop\\Northwestern\\2022_Spring\\BIOS_522_Network_Analysis\\Homework\\finalproject\\tableonecont.csv")
+
+#write.csv(tabcat, file="C:\\Users\\Kyle McCannon\\Desktop\\Northwestern\\2022_Spring\\BIOS_522_Network_Analysis\\Homework\\finalproject\\tableonecat.csv")
+
+
+```
+
+
+```{r echo=FALSE, include=FALSE}
+#transpose
+fadata <- t(data) %>% as.data.frame()
+
+fadsamdata <- t(sampledata) %>% as.data.frame()
+
+#set column names
+colnames(fadata) <- fadata[1,]
+
+
+#set row names by subject ID
+row.names(fadata) <- fadata[,1]
+
+#remove row/column names from dataset
+fad <- as.data.frame(fadata[-1,-1])
+
+#replace spaces with underscore
+colnames(fad) <- gsub(pattern=" ", replacement="_", colnames(fad))
+
+colnames(fad) <- gsub(pattern=":", replacement="_", colnames(fad))
+
+head(fad)
+```
+
+
+
+
+```{r echo=FALSE, include=FALSE}
+#Preparing Data and Column headers for Subsets
+#numeric named columns
+num.cols <- fad[,c(2,7,8,9,10,15,16,17,18,19,22,23,24,25,26,27,28,30,31,32,33,34,35,36,37,38,39,40,41,42,43,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63,64,65,66)]
+
+#remove "," "-" and attach prefix "M_" to columns beg. w/ number
+fad <- fad %>%
+            rename("M_6k_PGF1a"="6k_PGF1a",           
+                   "M_6k_PGE1"="6k_PGE1",        
+                   "M_6_15_dkdh_PGF1a"="6,15_dk-,dh-_PGF1a",
+                   "M_15k_PGF2a"="15k_PGF2a",         
+                    "M_15k_PGE2"="15k_PGE2",           
+                    "M_11b_PGE2"="11b_PGE2",           
+                    "M_12-HHTrE"="12-HHTrE",           
+                    "M_11-HETE"="11-HETE",           
+                    "M_11-HEPE"="11-HEPE",            
+                    "M_13_HDoHE"="13_HDoHE",           
+                    "M_15d_PGD2"="15d_PGD2",           
+                    "M_5_iso_PGF2a_VI"="5-iso_PGF2a_VI",    
+                    "M_8_iso_PGF2a_III"="8-iso_PGF2a_III",
+                    "M_9_HETE"="9-HETE",             
+                    "M_9_HEPE"="9-HEPE",             
+                    "M_16_HDoHE"="16_HDoHE",
+                    "M_20_HDoHE"="20_HDoHE",
+                    "M_5_HETE"="5-HETE", 
+                    "M_4_HDoHE"="4_HDoHE",
+                    "M_9_HOTrE"="9-HOTrE",
+                    "M_15_HETE"="15-HETE",
+                    "M_15_HEPE"="15-HEPE",
+                    "M_13_HODE"="13-HODE",
+                    "M_15_HETrE"="15-HETrE",
+                    "M_8_HETE"="8-HETE",
+                    "M_10_HDoHE"="10_HDoHE",
+                    "M_12_HETE"="12-HETE",
+                    "M_12_HEPE"="12-HEPE",
+                    "M_14_HDoHE"="14_HDoHE",
+                    "M_11_HDoHE"="11_HDoHE",
+                    "M_9_HODE"="9-HODE",
+                    "M_5_oxoETE"="5-oxoETE",
+                    "M_15_oxoETE"="15-oxoETE",          
+                    "M_9_oxoODE"="9-oxoODE",           
+                    "M_20_HETE"="20-HETE",
+                    "M_19_HETE"="19-HETE",
+                    "M_18_HETE"="18-HETE", 
+                    "M_17_HETE"="17-HETE",            
+                    "M_16_HETE"="16-HETE", 
+                    "M_5_6_EET"="5,6-EET",
+                    "M_8_9_EET"="8,9-EET", 
+                    "M_11_12_EET"="11,12-EET", 
+                    "M_14_15_EET"="14,15-EET",
+                    "M_19_20_DiHDPA"="19,20_DiHDPA",
+                    "M_9_10_EpOME"="9,10_EpOME",
+                    "M_12_13_EpOME"="12,13_EpOME",
+                    "M_5_6_diHETrE"="5,6-diHETrE",
+                    "M_8_9_diHETrE"="8,9-diHETrE",
+                    "M_11_12_diHETrE"="11,12-diHETrE",
+                    "M_14_15_diHETrE"="14,15-diHETrE",
+                    "M_9_10_diHOME"="9,10_diHOME",
+                    "M_12_13_diHOME"="12,13_diHOME",
+                    "M_20cooh_AA"="20cooh_AA")
+
+fad <- fad %>% rename(
+                    "FA14_0"="FA(14_0)",
+                    "FA15_0"="FA(15_0)",
+                    "FA16_0"="FA(16_0)",
+                    "FA16_1"="FA(16_1)",
+                    "FA17_0"="FA(17_0)",
+                    "FA17_1"="FA(17_1)",
+                    "FA18_0"="FA(18_0)",
+                    "FA18_1"="FA(18_1)",
+                    "FA18_2"="FA(18_2)",
+                    "FA18_3_N3"="FA(18_3_N3)",
+                    "FA18_3_N6"="FA(18_3_N6)",
+                    "FA18_4"="FA(18_4)",
+                    "FA20_0"="FA(20_0)",
+                    "FA20_1"="FA(20_1)",
+                    "FA20_2"="FA(20_2)",
+                    "FA20_3_N3"="FA(20_3_N3)",
+                    "FA20_3_N6"="FA(20_3_N6)",
+                    "FA20_3_N9"="FA(20_3_N9)",
+                    "FA20_4"="FA(20_4)",
+                    "FA20_5"="FA(20_5)",
+                    "FA22_0"="FA(22_0)",
+                    "FA22_1"="FA(22_1)",
+                    "FA22_2"="FA(22_2)",
+                    "FA22_3"="FA(22_3)",
+                    "FA22_4"="FA(22_4)",
+                    "FA22_5_N3"="FA(22_5_N3)",
+                    "FA22_5_N6"="FA(22_5_N6)",
+                    "FA22_6"="FA(22_6)",
+                    "FA23_0"="FA(23_0)",
+                    "FA24_0"="FA(24_0)",
+                    "FA24_1"="FA(24_1)",
+                    "FA26_0"="FA(26_0)",)
+
+
+#subset to only numeric metabolite columns (remove Factors/missing/per.missing)
+fad_numeric <- as.data.frame(fad[,c(-1, -99, -100)])
+
+#simple mean imputation for loop
+for(i in 1:ncol(fad_numeric)) {
+  
+  fad_numeric[ , i ] <- as.numeric(fad_numeric[ , i ])
+  
+  fad_numeric[ , i ][is.na(fad_numeric[ , i])] <- as.vector(mean(fad_numeric[ , i], na.rm=TRUE))
+}
+
+
+fad_numeric$factors <- gsub(fad$Factors, pattern="Diagnosis:", replacement="", ignore.case=TRUE)
+
+#Preparing Subsets for iDingo
+##Normal:Steatosis
+
+fad.n.ste <- subset(fad_numeric, fad_numeric$factors=="Normal" | fad_numeric$factors=="Steatosis")
+
+table(fad.n.ste$factors)
+
+fad.n.ste$bfactor <- ifelse(fad.n.ste$factors=="Steatosis", 1, 0)
+
+fad.n.s <- fad.n.ste[,-98]
+
+##Normal:NASH
+
+fad.n.nash <- subset(fad_numeric, fad_numeric$factors=="Normal" | fad_numeric$factors=="NASH")
+
+table(fad.n.nash$factors)
+
+fad.n.nash$bfactor <- ifelse(fad.n.nash$factors=="NASH", 1, 0)
+
+fad.n.n <- fad.n.nash[, -98]
+
+##Normal:Cirrhosis
+
+fad.n.cir <- subset(fad_numeric, fad_numeric$factors=="Normal" | fad_numeric$factors=="Cirrhosis")
+
+table(fad.n.cir$factors)
+
+fad.n.cir$bfactor <- ifelse(fad.n.cir$factors=="Cirrhosis", 1, 0)
+
+fad.n.c <- fad.n.cir[, -98]
+
+#Steatosis:NASH
+
+fad.s.nash <- subset(fad_numeric, fad_numeric$factors=="NASH" | fad_numeric$factors=="Steatosis")
+
+table(fad.s.nash$factors)
+
+##Steatosis=0 , NASH=1
+fad.s.nash$bfactor <- ifelse(fad.s.nash$factors=="NASH", 1, 0)
+
+fad.s.n <- fad.s.nash[,-98]
+```
+
+```{r echo=FALSE}
+#dingo output for normal : steatosis
+fad_ns_dingo <- dingo(dat = fad.n.s, x=fad.n.s$bfactor, B=100)
+
+```
+
+```{r echo=FALSE}
+#dingo output for normal:NASH
+fad_nn_dingo <- dingo(dat=fad.n.n, x=fad.n.n$bfactor, B=100)
+```
+
+```{r echo=FALSE}
+#dingo output for NASH : steatosis
+fad_sn_dingo <- dingo(dat=fad.s.n, x=fad.s.n$bfactor, B=100)
+```
+
+```{r include=FALSE, echo=FALSE}
+#Steatosis:NASH Dingo Dataframe
+fad.snash.dingo <- data.frame(metab1=fad_sn_dingo$genepair$gene1,
+                           metab2=fad_sn_dingo$genepair$gene2,
+                          metabpair=paste(as.character(fad_sn_dingo$genepair$gene1),
+                                          as.character(fad_sn_dingo$genepair$gene2),
+                                          sep=":"),
+                          R1=fad_sn_dingo$R1,
+                          R2=fad_sn_dingo$R2,
+                          diffscore=fad_sn_dingo$diff.score,
+                          pval=fad_sn_dingo$p.val)
+head(fad.snash.dingo)
+
+#Normal:Steatosis Dingo Dataframe
+fad.ns.dingo <- data.frame(metab1=fad_ns_dingo$genepair$gene1,
+                           metab2=fad_ns_dingo$genepair$gene2,
+                          metabpair=paste(as.character(fad_ns_dingo$genepair$gene1),
+                                          as.character(fad_ns_dingo$genepair$gene2),
+                                          sep=":"),
+                          R1=fad_ns_dingo$R1,
+                          R2=fad_ns_dingo$R2,
+                          diffscore=fad_ns_dingo$diff.score,
+                          pval=fad_ns_dingo$p.val)
+head(fad.ns.dingo)
+
+#Normal:NASH Dingo Dataframe
+fad.nn.dingo <- data.frame(metab1=fad_nn_dingo$genepair$gene1,
+                           metab2=fad_nn_dingo$genepair$gene2,
+                          metabpair=paste(as.character(fad_nn_dingo$genepair$gene1),
+                                          as.character(fad_nn_dingo$genepair$gene2),
+                                          sep=":"),
+                          R1=fad_nn_dingo$R1,
+                          R2=fad_nn_dingo$R2,
+                          diffscore=fad_nn_dingo$diff.score,
+                          pval=fad_nn_dingo$p.val)
+head(fad.nn.dingo)
+
+```
+
+```{r echo=FALSE}
+####  Steatosis vs. NASH
+#Differential Scores Results Steatosis:NASH
+summary(abs(fad.snash.dingo$diffscore))
+
+#table of diffscores > 4
+table(abs(fad.snash.dingo$diffscore)>4)
+
+#9 metab pairs w/ diff score > 4
+sndiff <- sum(abs(fad.snash.dingo$diffscore)>4)
+
+#Metab Pairs
+sndiffmetabs <- fad.snash.dingo[abs(fad.snash.dingo$diffscore)>4,3]
+
+
+
+####  Normal vs. Steatosis
+summary(abs(fad.ns.dingo$diffscore))
+
+table(abs(fad.ns.dingo$diffscore)>4)
+
+nsdiff <- sum(abs(fad.ns.dingo$diffscore)>4)
+
+nsdiffmetabs <- fad.ns.dingo[abs(fad.ns.dingo$diffscore)>4,3]
+
+####  Normal vs. NASH
+summary(abs(fad.nn.dingo$diffscore))
+
+table(abs(fad.nn.dingo$diffscore)>4)
+
+nndiff <- sum(abs(fad.nn.dingo$diffscore)>4)
+
+nndiffmetabs <- fad.nn.dingo[abs(fad.nn.dingo$diffscore)>4,3]
+```
+
+```{r fig.dim=c(8,8), echo=FALSE}
+#Global Component NASH VS STEATOSIS
+rho_thr <- 0.2
+
+fad.snash.dingo$global <- ifelse(
+                              (abs(fad.snash.dingo$R2)>rho_thr) &
+                                (abs(fad.snash.dingo$R1)>rho_thr) &
+                                  (sign(fad.snash.dingo$R1)==sign(fad.snash.dingo$R2)), 1, 0)
+
+globalsn <-  graph_from_edgelist(
+                          as.matrix(fad.snash.dingo[which(fad.snash.dingo$global==1), 
+                                                 c("metab1","metab2")]), directed=FALSE)
+
+Eicos <- colnames(fad.s.nash[,1:65])
+
+
+V(globalsn)$color <- rep("darkblue", length(V(globalsn)))
+
+V(globalsn)$color[which(names(V(globalsn)) %in% Eicos)] <- "darkred"
+
+#GLOBAL PLOT
+plot(globalsn, 
+     vertex.size=hub.score(globalsn)$vector*10, 
+     vertex.label.cex=0.5, 
+     vertex.label.degree=(pi/2), 
+     vertex.color=V(globalsn)$color, 
+     vertex.label.dist=0.75, 
+     vertex.label.font=2, 
+     main="Figure 1A. Global Component of NASH vs. Steatosis")
+
+legend(x="bottomright", 
+       legend=c("Eicosanoids", "Fatty Acids"), 
+       fill=c("darkred","darkblue"))
+
+ceb_gns <- cluster_edge_betweenness(globalsn)
+```
+
+
+
+```{r fig.dim=c(8,8), echo=FALSE}
+#Global Component Normal VS STEATOSIS
+rho_thr <- 0.2
+
+fad.ns.dingo$global <- ifelse(
+                              (abs(fad.ns.dingo$R2)>rho_thr) &
+                                (abs(fad.ns.dingo$R1)>rho_thr) &
+                                  (sign(fad.ns.dingo$R1)==sign(fad.ns.dingo$R2)), 1, 0)
+
+globalns <-  graph_from_edgelist(
+                          as.matrix(fad.ns.dingo[which(fad.ns.dingo$global==1), 
+                                                 c("metab1","metab2")]), directed=FALSE)
+
+Eicos <- colnames(fad.s.nash[,1:65])
+
+
+V(globalns)$color <- rep("darkblue", length(V(globalns)))
+
+V(globalns)$color[which(names(V(globalns)) %in% Eicos)] <- "darkred"
+
+plot(globalns, 
+     vertex.size=(hub.score(globalns)$vector*10), 
+     vertex.label.cex=0.5, 
+     vertex.label.degree=(pi/2),
+     vertex.color=V(globalns)$color, 
+     vertex.label.dist=0.75, 
+     vertex.label.font=2, 
+     main="Figure 1B. Global Component of Normal vs. Steatosis")
+
+legend(x="bottomright", 
+       legend=c("Eicosanoids", "Fatty Acids"), 
+       fill=c("darkred","darkblue"))
+```
+
+```{r fig.dim=c(8,8), echo=FALSE}
+#Global Component Normal VS NASH
+rho_thr <- 0.2
+
+fad.nn.dingo$global <- ifelse(
+                              (abs(fad.nn.dingo$R2)>rho_thr) &
+                                (abs(fad.nn.dingo$R1)>rho_thr) &
+                                  (sign(fad.nn.dingo$R1)==sign(fad.nn.dingo$R2)), 1, 0)
+
+globalnn <-  graph_from_edgelist(
+                          as.matrix(fad.nn.dingo[which(fad.nn.dingo$global==1), 
+                                                 c("metab1","metab2")]), directed=FALSE)
+
+Eicos <- colnames(fad.s.nash[,1:65])
+
+
+V(globalnn)$color <- rep("darkblue", length(V(globalnn)))
+
+V(globalnn)$color[which(names(V(globalnn)) %in% Eicos)] <- "darkred"
+
+plot(globalnn, 
+     vertex.size=hub.score(globalnn)$vector*10, 
+     vertex.label.cex=0.5, 
+     vertex.label.degree=(pi/2), 
+     vertex.color=V(globalnn)$color, 
+     vertex.label.dist=0.75,
+     vertex.label.font=2, 
+     main="Figure 1C. Global Component of Normal vs. NASH")
+
+legend(x="bottomright", 
+       legend=c("Eicosanoids", "Fatty Acids"), 
+       fill=c("darkred","darkblue"))
+```
+
+```{r fig.dim=c(12,8), echo=FALSE, include=FALSE}
+par(mfrow=c(1,3))
+plot(globalsn, vertex.size=4, vertex.label.cex=0.5, vertex.label.degree=(pi/2), vertex.color=V(globalsn)$color, vertex.label.dist=0.75, vertex.label.font=2, main="Figure 1A. Global Component", sub="NASH vs. Steatosis")
+
+plot(globalns, vertex.size=4, vertex.label.cex=0.5, vertex.label.degree=(pi/2), vertex.color=V(globalns)$color, vertex.label.dist=0.75,vertex.label.font=2, main="Figure 1B. Global Component", sub="Normal vs. Steatosis")
+
+plot(globalnn, vertex.size=4, vertex.label.cex=0.5, vertex.label.degree=(pi/2), vertex.color=V(globalnn)$color, vertex.label.dist=0.75, vertex.label.font=2, main="Figure 1C. Global Component", sub="Normal vs. NASH")
+```
+
+
+
+
+
+
+```{r fig.dim=c(8,8), echo=FALSE}
+#Local Components NASH vs. STEATOSIS
+#normal
+fad.snash.dingo$l_S <- ifelse(
+                            (abs(fad.snash.dingo$R1)>rho_thr) &
+                            (abs(fad.snash.dingo$R2)<rho_thr) &
+                            (fad.snash.dingo$pval<0.05),1,0)
+#steatosis
+fad.snash.dingo$l_N <- ifelse(
+                            (abs(fad.snash.dingo$R2)>rho_thr) &
+                            (abs(fad.snash.dingo$R1)<rho_thr) &
+                            (fad.snash.dingo$pval<0.05),1,0)
+
+g_stea <- graph_from_edgelist(
+                      as.matrix(fad.snash.dingo[which((fad.snash.dingo$global+fad.snash.dingo$l_S)==1), 
+                                             c("metab1", "metab2")]), directed=FALSE)
+
+g_nash <- graph_from_edgelist(
+                      as.matrix(fad.snash.dingo[which((fad.snash.dingo$global+fad.snash.dingo$l_N)==1), 
+                                             c("metab1", "metab2")]), directed=FALSE)
+
+gs_nodes <- unique(c(as.character(fad.snash.dingo[which(fad.snash.dingo$l_S==1), "metab1"]), as.character(fad.snash.dingo[which(fad.snash.dingo$l_S==1), "metab2"])))
+
+gn_nodes <- unique(c(as.character(fad.snash.dingo[which(fad.snash.dingo$l_N==1), "metab1"]), as.character(fad.snash.dingo[which(fad.snash.dingo$l_N==1), "metab2"])))
+
+#Color Vertices in Control / Normal Phenotype
+V(g_stea)$color <- rep("darkgreen", length(V(g_stea)))
+
+V(g_stea)$color[which(names(V(g_stea)) %in% gs_nodes)] <- "darkorange"
+
+#Color Vertices in Steatosis Phenotype
+
+V(g_nash)$color <- rep("darkgreen", length(V(g_nash)))
+
+V(g_nash)$color[which(names(V(g_nash)) %in% gn_nodes)] <- "darkorange"
+
+#name size
+
+graphatt <- as.data.frame(matrix(nrow=97, ncol=1))
+
+graphatt$metab <- colnames(fad.s.nash[,c(-98,-99)]) 
+
+
+par(mfrow=c(1,2))
+
+plot(g_stea, 
+     vertex.size=hub.score(g_stea)$vector*15, 
+     vertex.label.color=V(g_stea)$color, 
+     vertex.label.cex=0.5, 
+     vertex.label.degree=(pi/2), 
+     vertex.label.dist=0.65,
+      vertex.label=NA,
+     vertex.label.font=2,
+     main="Steatosis")
+
+plot(g_nash, 
+     vertex.size=hub.score(g_nash)$vector*15,
+     vertex.label.color=V(g_nash)$color,
+     vertex.label.cex=0.5, 
+     vertex.label.degree=(pi/2),
+     vertex.label.dist=0.65, 
+     vertex.label=NA,
+     vertex.label.font=2,
+     main="NASH")
+
+legend(x=-1, y=-1.2, legend=c("Local Unique", "Global"), fill=c("darkorange", "darkgreen"))
+
+mtext("Figure 2A. Local Component Networks", side=3, line=-40, outer = TRUE, cex = 1.25)
+
+cons_gsnash <- which(V(g_nash)$color=="darkorange")
+cons_gstean <- which(V(g_stea)$color=="darkorange")
+
+```
+
+```{r fig.dim=c(8,8), echo=FALSE}
+#Local Components Normal & Steatosis
+#normal 
+fad.ns.dingo$l_S <- ifelse(
+                            (abs(fad.ns.dingo$R1)>rho_thr) &
+                            (abs(fad.ns.dingo$R2)<rho_thr) &
+                            (fad.ns.dingo$pval<0.05),1,0)
+#steatosis
+fad.ns.dingo$l_N <- ifelse(
+                            (abs(fad.ns.dingo$R2)>rho_thr) &
+                            (abs(fad.ns.dingo$R1)<rho_thr) &
+                            (fad.ns.dingo$pval<0.05),1,0)
+
+g_cont_s <- graph_from_edgelist(
+                      as.matrix(fad.ns.dingo[which((fad.ns.dingo$global+fad.ns.dingo$l_S)==1), 
+                                             c("metab1", "metab2")]), directed=FALSE)
+
+g_c_stea <- graph_from_edgelist(
+                      as.matrix(fad.ns.dingo[which((fad.ns.dingo$global+fad.ns.dingo$l_N)==1), 
+                                             c("metab1", "metab2")]), directed=FALSE)
+
+gcs0_nodes <- unique(c(as.character(fad.ns.dingo[which(fad.ns.dingo$l_S==1), "metab1"]), as.character(fad.ns.dingo[which(fad.ns.dingo$l_S==1), "metab2"])))
+
+gcs1_nodes <- unique(c(as.character(fad.ns.dingo[which(fad.ns.dingo$l_N==1), "metab1"]), as.character(fad.ns.dingo[which(fad.ns.dingo$l_N==1), "metab2"])))
+
+#Color Vertices in Control / Normal Phenotype
+V(g_cont_s)$color <- rep("darkgreen", length(V(g_cont_s)))
+
+V(g_cont_s)$color[which(names(V(g_cont_s)) %in% gcs0_nodes)] <- "darkorange"
+
+#Color Vertices in Steatosis Phenotype
+
+V(g_c_stea)$color <- rep("darkgreen", length(V(g_c_stea)))
+
+V(g_c_stea)$color[which(names(V(g_c_stea)) %in% gcs1_nodes)] <- "darkorange"
+
+
+#Control vs. Steatosis
+par(mfrow=c(1,2))
+plot(g_cont_s, 
+     vertex.size=hub.score(g_cont_s)$vector*15, 
+     vertex.label.color=V(g_cont_s)$color, 
+     vertex.label.cex=0.5, 
+     vertex.label.degree=(pi/2), 
+     vertex.label.dist=0.65,
+     vertex.label=NA,
+     main="Control")
+
+plot(g_c_stea, 
+     vertex.size=hub.score(g_c_stea)$vector*15, 
+     vertex.label.cex=0.5, 
+     vertex.label.degree=(pi/2), 
+     vertex.label.dist=0.65, 
+     vertex.label=NA,
+     main="Steatosis")
+
+legend(x=-1, y=-1.2, legend=c("Local Unique", "Global"), fill=c("darkorange", "darkgreen"))
+
+mtext("Figure 2B. Local Component Networks", side=3, line=-40, outer = TRUE, cex = 1.25)
+
+cons_gcstea <- which(V(g_c_stea)$color=="darkorange")
+cons_gconts <- which(V(g_cont_s)$color=="darkorange")
+
+```
+
+
+```{r fig.dim=c(8,8), echo=FALSE}
+#Local Components Normal & NASH
+#normal
+fad.nn.dingo$l_S <- ifelse(
+                            (abs(fad.nn.dingo$R1)>rho_thr) &
+                            (abs(fad.nn.dingo$R2)<rho_thr) &
+                            (fad.nn.dingo$pval<0.05),1,0)
+#NASH
+fad.nn.dingo$l_N <- ifelse(
+                            (abs(fad.nn.dingo$R2)>rho_thr) &
+                            (abs(fad.nn.dingo$R1)<rho_thr) &
+                            (fad.nn.dingo$pval<0.05),1,0)
+#normal
+g_cont_n <- graph_from_edgelist(
+                      as.matrix(fad.nn.dingo[which((fad.nn.dingo$global+fad.nn.dingo$l_S)==1), 
+                                             c("metab1", "metab2")]), directed=FALSE)
+#NASH
+g_c_nash <- graph_from_edgelist(
+                      as.matrix(fad.nn.dingo[which((fad.nn.dingo$global+fad.nn.dingo$l_N)==1), 
+                                             c("metab1", "metab2")]), directed=FALSE)
+
+gcn0_nodes <- unique(c(as.character(fad.nn.dingo[which(fad.nn.dingo$l_S==1), "metab1"]), as.character(fad.nn.dingo[which(fad.nn.dingo$l_S==1), "metab2"])))
+
+gcn1_nodes <- unique(c(as.character(fad.nn.dingo[which(fad.nn.dingo$l_N==1), "metab1"]), as.character(fad.nn.dingo[which(fad.nn.dingo$l_N==1), "metab2"])))
+
+#Color Vertices in Control / Normal Phenotype
+V(g_cont_n)$color <- rep("darkgreen", length(V(g_cont_n)))
+
+V(g_cont_n)$color[which(names(V(g_cont_n)) %in% gcn0_nodes)] <- "darkorange"
+
+#Color Vertices in Steatosis Phenotype
+
+V(g_c_nash)$color <- rep("darkgreen", length(V(g_c_nash)))
+
+V(g_c_nash)$color[which(names(V(g_c_nash)) %in% gcn1_nodes)] <- "darkorange"
+
+
+#Control vs. NASH
+par(mfrow=c(1,2))
+plot(g_cont_n, 
+     vertex.size=hub.score(g_cont_n)$vector*15, 
+     vertex.label=NA, 
+     vertex.label.color=V(g_cont_n)$color, 
+     vertex.label.cex=0.5, 
+     vertex.label.degree=(pi/2), 
+     vertex.label.dist=0.65,
+     vertex.label.font=2,
+     main="Control")
+
+plot(g_c_nash, 
+     vertex.size=hub.score(g_c_nash)$vector*15, 
+     vertex.label=NA, 
+     vertex.label.color=V(g_c_nash)$color, 
+     vertex.label.cex=0.5, 
+     vertex.label.degree=(pi/2), 
+     vertex.label.dist=0.65, 
+     vertex.label.font=2,
+     main="NASH")
+
+legend(x=-1, y=-1.2, legend=c("Local Unique", "Global"), fill=c("darkorange", "darkgreen"))
+
+mtext("Figure 2C. Local Component Networks", side=3, line=-40, outer = TRUE, cex = 1.25)
+
+
+cons_gcnash <- which(V(g_c_nash)$color=="darkorange")
+cons_gcontn <- which(V(g_cont_n)$color=="darkorange")
+
+```
+
+
+```{r echo=FALSE, include=FALSE}
+#Degrees
+#StEA vs. NASH
+which(degree(globalsn)>4)
+
+which(degree(g_stea)>4)
+
+which(degree(g_nash)>4)
+
+#Normal vs. NASH
+which(degree(globalns)>4)
+
+which(degree(g_cont_n)>4)
+
+which(degree(g_c_nash)>4)
+
+#Normal vs. STEA
+which(degree(globalnn)>4)
+
+which(degree(g_cont_s)>4)
+
+which(degree(g_c_stea)>4)
+
+#More hub nodes appear in the Nash vs. Stea networks
+#supports hypothesis
+```
+Discussion
+
+  The centrality and degree of inflammation precursors support the hypothesis of increased centrality of prostaglandin precursors in the latent reversible stages of NAFLD.  Thromboxane B2 was observed as a hub node and topology was conserved within local networks. The hydroxyeicosatetraenoic acids 9-HETE and 20-HETE, 14-HDoHE (linoleic acid derivative), dhk_PGD2 (derivative of Prostaglandin D2), and 22:1 mono-unsaturated acid were also distinct hub nodes within the differential network of NASH vs. Steatosis. Since the primary analytic method utilized conditional partial correlations to build a gaussian graphical model, the local networks represent the covariate effect of disease stage.  A considerable amount of missing data could have biased partial correlations.  This could be improved by using multiple imputation methods to improve the accuracy of the metabolite means.  Increasing sample size of controls in future studies would reduce a false inflated correlation score.  Using an integrative approach with genes or metabolite levels from different sampling types such as blood or urine may reduce inflated error rates.  Our findings suggest that the liver physiology changes as stages of NAFLD progresses.  Upregulated prostaglandin precursors and fatty acids are more centralized role in liver physiology as the liver is increasingly impeded by fatty deposits.  Further investigation with additional metabolites will be needed to distinguish biomarkers between Steatosis and NASH, to determine a metabolomic fingerprint for clinical diagnostics.
+
+
+
